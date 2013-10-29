@@ -1,0 +1,8 @@
+Package: rediscc
+Title: Redis client
+Version: 0.1-0
+Author: Simon Urbanek <simon.urbanek@r-project.org>
+Maintainer: Simon Urbanek <simon.urbanek@r-project.org>
+Description: Redis client
+License: BSD
+URL: http://rforge.net/rediscc

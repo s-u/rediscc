@@ -1,0 +1,2 @@
+useDynLib(rediscc, cr_connect, cr_close, cr_get, cr_set, cr_del, cr_keys)
+export(redis.connect, redis.get, redis.set, redis.close, redis.rm, redis.keys)
