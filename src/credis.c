@@ -4,8 +4,14 @@
 #include <R.h>
 #include <Rinternals.h>
 
+#define RCF_RECONNECT   1
+
 typedef struct rconn_s {
     redisContext *rc;
+    int    flags;
+    char  *host;
+    int    port;
+    double timeout;
 } rconn_t;
 
 static void rc_close(rconn_t *c) {
@@ -19,14 +25,18 @@ static void rconn_fin(SEXP what) {
     rconn_t *c = (rconn_t*) EXTPTR_PTR(what);
     if (c) {
 	rc_close(c);
+	if (c->host) {
+	    free(c->host);
+	    c->host = 0;
+	}
 	free(c);
-    }    
+    }
 }
 
-SEXP cr_connect(SEXP sHost, SEXP sPort, SEXP sTimeout) {
+SEXP cr_connect(SEXP sHost, SEXP sPort, SEXP sTimeout, SEXP sReconnect) {
     const char *host = "localhost";
     double tout = Rf_asReal(sTimeout);
-    int port = Rf_asInteger(sPort);
+    int port = Rf_asInteger(sPort), reconnect = (Rf_asInteger(sReconnect) > 0);
     redisContext *ctx;
     rconn_t *c;
     SEXP res;
@@ -53,6 +63,10 @@ SEXP cr_connect(SEXP sHost, SEXP sPort, SEXP sTimeout) {
 	Rf_error("unable to allocate connection context");
     }
     c->rc = ctx;
+    c->flags = reconnect ? RCF_RECONNECT : 0;
+    c->host  = strdup(host);
+    c->port  = port;
+    c->timeout = tout;
     redisSetTimeout(ctx, tv);
     res = PROTECT(R_MakeExternalPtr(c, R_NilValue, R_NilValue));
     Rf_setAttrib(res, R_ClassSymbol, Rf_mkString("redisConnection"));
@@ -103,6 +117,30 @@ static SEXP rc_reply2R(redisReply *reply) {
     return R_NilValue;
 }
 
+static void cr_validate_connection(rconn_t *c) {
+    if (!c->rc && (c->flags & RCF_RECONNECT)) {
+	struct timeval tv;
+	tv.tv_sec = (int) c->timeout;
+	tv.tv_usec = (c->timeout - (double)tv.tv_sec) * 1000000.0;
+	if (c->port < 1)
+	    c->rc = redisConnectUnixWithTimeout(c->host, tv);
+	else
+	    c->rc = redisConnectWithTimeout(c->host, c->port, tv);
+	if (!c->rc)
+	    Rf_error("disconnected connection and re-connect to redis failed (NULL context)");
+	if (c->rc->err){
+	    SEXP es = Rf_mkChar(c->rc->errstr);
+	    redisFree(c->rc);
+	    c->rc = 0;
+	    Rf_error("disconnected connection and re-connect to redis failed: %s", CHAR(es));
+	}
+	redisSetTimeout(c->rc, tv);
+	/* re-connect succeeded */
+    }
+    if (!c->rc)
+	Rf_error("disconnected redis connection");
+}
+
 #define NARGBUF 128
 static const char *argbuf[NARGBUF];
 
@@ -116,7 +154,7 @@ SEXP cr_get(SEXP sc, SEXP keys, SEXP asList) {
     if (!Rf_inherits(sc, "redisConnection")) Rf_error("invalid connection");
     c = (rconn_t*) EXTPTR_PTR(sc);
     if (!c) Rf_error("invalid connection (NULL)");
-    if (!c->rc) Rf_error("disconnected connection");
+    cr_validate_connection(c);
     if (TYPEOF(keys) != STRSXP)
 	Rf_error("invalid keys");
     n = LENGTH(keys);
@@ -172,7 +210,7 @@ SEXP cr_set(SEXP sc, SEXP keys, SEXP values) {
     if (!Rf_inherits(sc, "redisConnection")) Rf_error("invalid connection");
     c = (rconn_t*) EXTPTR_PTR(sc);
     if (!c) Rf_error("invalid connection (NULL)");
-    if (!c->rc) Rf_error("disconnected connection");
+    cr_validate_connection(c);
     if (TYPEOF(keys) != STRSXP)
 	Rf_error("invalid keys");
     n = LENGTH(keys);
@@ -216,7 +254,7 @@ SEXP cr_del(SEXP sc, SEXP keys) {
     if (!Rf_inherits(sc, "redisConnection")) Rf_error("invalid connection");
     c = (rconn_t*) EXTPTR_PTR(sc);
     if (!c) Rf_error("invalid connection (NULL)");
-    if (!c->rc) Rf_error("disconnected connection");
+    cr_validate_connection(c);
     if (TYPEOF(keys) != STRSXP)
 	Rf_error("invalid keys");
     n = LENGTH(keys);
@@ -252,7 +290,7 @@ SEXP cr_keys(SEXP sc, SEXP sPattern) {
     if (!Rf_inherits(sc, "redisConnection")) Rf_error("invalid connection");
     c = (rconn_t*) EXTPTR_PTR(sc);
     if (!c) Rf_error("invalid connection (NULL)");
-    if (!c->rc) Rf_error("disconnected connection");
+    cr_validate_connection(c);
     if (TYPEOF(sPattern) == STRSXP && LENGTH(sPattern) > 0)
 	pattern = CHAR(STRING_ELT(sPattern, 0));
     reply = redisCommand(c->rc, "KEYS %s", pattern);
