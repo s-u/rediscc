@@ -4,7 +4,8 @@
 #include <R.h>
 #include <Rinternals.h>
 
-#define RCF_RECONNECT   1
+#define RCF_RECONNECT   1  /* auto-reconnect closed connection */
+#define RCF_RETRY       2  /* on error, try to re-connect and re-run the same command */
 
 typedef struct rconn_s {
     redisContext *rc;
@@ -33,10 +34,11 @@ static void rconn_fin(SEXP what) {
     }
 }
 
-SEXP cr_connect(SEXP sHost, SEXP sPort, SEXP sTimeout, SEXP sReconnect) {
+SEXP cr_connect(SEXP sHost, SEXP sPort, SEXP sTimeout, SEXP sReconnect, SEXP sRetry) {
     const char *host = "localhost";
     double tout = Rf_asReal(sTimeout);
-    int port = Rf_asInteger(sPort), reconnect = (Rf_asInteger(sReconnect) > 0);
+    int port = Rf_asInteger(sPort), reconnect = (Rf_asInteger(sReconnect) > 0),
+	retry = (Rf_asInteger(sRetry) > 0);
     redisContext *ctx;
     rconn_t *c;
     SEXP res;
@@ -63,7 +65,7 @@ SEXP cr_connect(SEXP sHost, SEXP sPort, SEXP sTimeout, SEXP sReconnect) {
 	Rf_error("unable to allocate connection context");
     }
     c->rc = ctx;
-    c->flags = reconnect ? RCF_RECONNECT : 0;
+    c->flags = (reconnect ? RCF_RECONNECT : 0) | (retry ? RCF_RETRY : 0);
     c->host  = strdup(host);
     c->port  = port;
     c->timeout = tout;
@@ -117,7 +119,7 @@ static SEXP rc_reply2R(redisReply *reply) {
     return R_NilValue;
 }
 
-static void cr_validate_connection(rconn_t *c) {
+static void rc_validate_connection(rconn_t *c, int optional) {
     if (!c->rc && (c->flags & RCF_RECONNECT)) {
 	struct timeval tv;
 	tv.tv_sec = (int) c->timeout;
@@ -126,18 +128,21 @@ static void cr_validate_connection(rconn_t *c) {
 	    c->rc = redisConnectUnixWithTimeout(c->host, tv);
 	else
 	    c->rc = redisConnectWithTimeout(c->host, c->port, tv);
-	if (!c->rc)
+	if (!c->rc) {
+	    if (optional) return;
 	    Rf_error("disconnected connection and re-connect to redis failed (NULL context)");
+	}
 	if (c->rc->err){
 	    SEXP es = Rf_mkChar(c->rc->errstr);
 	    redisFree(c->rc);
 	    c->rc = 0;
+	    if (optional) return;
 	    Rf_error("disconnected connection and re-connect to redis failed: %s", CHAR(es));
 	}
 	redisSetTimeout(c->rc, tv);
 	/* re-connect succeeded */
     }
-    if (!c->rc)
+    if (!c->rc && !optional)
 	Rf_error("disconnected redis connection");
 }
 
@@ -154,7 +159,7 @@ SEXP cr_get(SEXP sc, SEXP keys, SEXP asList) {
     if (!Rf_inherits(sc, "redisConnection")) Rf_error("invalid connection");
     c = (rconn_t*) EXTPTR_PTR(sc);
     if (!c) Rf_error("invalid connection (NULL)");
-    cr_validate_connection(c);
+    rc_validate_connection(c, 0);
     if (TYPEOF(keys) != STRSXP)
 	Rf_error("invalid keys");
     n = LENGTH(keys);
@@ -171,6 +176,18 @@ SEXP cr_get(SEXP sc, SEXP keys, SEXP asList) {
 	argv[i + 1] = CHAR(STRING_ELT(keys, i));
     /* we use strings only, so no need to supply argvlen */
     reply = redisCommandArgv(c->rc, n + 1, argv, 0);
+    if (!reply && (c->flags & RCF_RETRY)) {
+	SEXP es = Rf_mkChar(c->rc->errstr);
+	rc_close(c);
+	rc_validate_connection(c, 1);
+	if (c->rc)
+	    reply = redisCommandArgv(c->rc, n + 1, argv, 0);
+	else {
+	    if (argv != argbuf)
+		free(argv);
+	    Rf_error("MGET error: %s and re-connect failed", CHAR(es));
+	}
+    }
     if (argv != argbuf)
 	free(argv);
     if (!reply) {
@@ -210,7 +227,7 @@ SEXP cr_set(SEXP sc, SEXP keys, SEXP values) {
     if (!Rf_inherits(sc, "redisConnection")) Rf_error("invalid connection");
     c = (rconn_t*) EXTPTR_PTR(sc);
     if (!c) Rf_error("invalid connection (NULL)");
-    cr_validate_connection(c);
+    rc_validate_connection(c, 0);
     if (TYPEOF(keys) != STRSXP)
 	Rf_error("invalid keys");
     n = LENGTH(keys);
@@ -232,6 +249,18 @@ SEXP cr_set(SEXP sc, SEXP keys, SEXP values) {
 	argsz[2 * i + 2] = LENGTH(VECTOR_ELT(values, i));
     }
     reply = redisCommandArgv(c->rc, 2 * n + 1, argv, argsz);
+    if (!reply && (c->flags & RCF_RETRY)) {
+	SEXP es = Rf_mkChar(c->rc->errstr);
+	rc_close(c);
+	rc_validate_connection(c, 1);
+	if (c->rc)
+	    reply = redisCommandArgv(c->rc, 2 * n + 1, argv, argsz);
+	else {
+	    if (argv != argbuf)
+		free(argv);
+	    Rf_error("MGET error: %s and re-connect failed", CHAR(es));
+	}
+    }
     if (argv != argbuf)
 	free(argv);
     if (!reply) {
@@ -254,7 +283,7 @@ SEXP cr_del(SEXP sc, SEXP keys) {
     if (!Rf_inherits(sc, "redisConnection")) Rf_error("invalid connection");
     c = (rconn_t*) EXTPTR_PTR(sc);
     if (!c) Rf_error("invalid connection (NULL)");
-    cr_validate_connection(c);
+    rc_validate_connection(c, 0);
     if (TYPEOF(keys) != STRSXP)
 	Rf_error("invalid keys");
     n = LENGTH(keys);
@@ -268,6 +297,18 @@ SEXP cr_del(SEXP sc, SEXP keys) {
 	argv[i + 1] = CHAR(STRING_ELT(keys, i));
     /* we use strings only, so no need to supply argvlen */
     reply = redisCommandArgv(c->rc, n + 1, argv, 0);
+    if (!reply && (c->flags & RCF_RETRY)) {
+	SEXP es = Rf_mkChar(c->rc->errstr);
+	rc_close(c);
+	rc_validate_connection(c, 1);
+	if (c->rc)
+	    reply = redisCommandArgv(c->rc, n + 1, argv, 0);
+	else {
+	    if (argv != argbuf)
+		free(argv);
+	    Rf_error("DEL error: %s and re-connect failed", CHAR(es));
+	}
+    }
     if (argv != argbuf)
 	free(argv);
     if (!reply) {
@@ -290,10 +331,15 @@ SEXP cr_keys(SEXP sc, SEXP sPattern) {
     if (!Rf_inherits(sc, "redisConnection")) Rf_error("invalid connection");
     c = (rconn_t*) EXTPTR_PTR(sc);
     if (!c) Rf_error("invalid connection (NULL)");
-    cr_validate_connection(c);
+    rc_validate_connection(c, 0);
     if (TYPEOF(sPattern) == STRSXP && LENGTH(sPattern) > 0)
 	pattern = CHAR(STRING_ELT(sPattern, 0));
     reply = redisCommand(c->rc, "KEYS %s", pattern);
+    if (!reply && (c->flags & RCF_RETRY)) {
+	rc_close(c);
+	rc_validate_connection(c, 0);
+	reply = redisCommand(c->rc, "KEYS %s", pattern);
+    }
     if (!reply) {
         SEXP es = Rf_mkChar(c->rc->errstr);
         rc_close(c);

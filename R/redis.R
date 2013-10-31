@@ -1,4 +1,4 @@
-redis.connect <- function(host="localhost", port=6379L, timeout=30, reconnect=FALSE) .Call(cr_connect, host, port, timeout, reconnect)
+redis.connect <- function(host="localhost", port=6379L, timeout=30, reconnect=FALSE, retry=FALSE) .Call(cr_connect, host, port, timeout, reconnect, retry)
 
 redis.get <- function(rc, keys, list=FALSE) {
   r <- .Call(cr_get, rc, keys, list)
