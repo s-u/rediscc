@@ -364,3 +364,73 @@ SEXP cr_keys(SEXP sc, SEXP sPattern) {
     UNPROTECT(1);
     return res;
 }
+
+/* issuue one command with one key paratemer and return the result */
+SEXP cr_cmd(SEXP sc, SEXP sArgs) {
+    rconn_t *c;
+    const char **argv = argbuf;
+    int n, i;
+    redisReply *reply;
+    SEXP res;
+
+    if (!Rf_inherits(sc, "redisConnection")) Rf_error("invalid connection");
+    c = (rconn_t*) EXTPTR_PTR(sc);
+    if (!c) Rf_error("invalid connection (NULL)");
+    rc_validate_connection(c, 0);
+    if (TYPEOF(sArgs) != STRSXP || LENGTH(sArgs) < 1)
+	Rf_error("invalid command - must be a string");
+    n = LENGTH(sArgs);
+    if (n + 1 > NARGBUF) {
+	argv = malloc(sizeof(const char*) * (n + 2));
+	if (!argv)
+	    Rf_error("out of memory");
+    }
+    for (i = 0; i < n; i++)
+	argv[i] = CHAR(STRING_ELT(sArgs, i));
+    /* we use strings only, so no need to supply argvlen */
+    reply = redisCommandArgv(c->rc, n, argv, 0);
+    if (!reply && (c->flags & RCF_RETRY)) {
+	SEXP es = Rf_mkChar(c->rc->errstr);
+	rc_close(c);
+	rc_validate_connection(c, 1);
+	if (c->rc)
+	    reply = redisCommandArgv(c->rc, 2, argv, 0);
+	else {
+	    if (argv != argbuf)
+		free(argv);
+	    Rf_error("%s error: %s and re-connect failed", argv[0], CHAR(es));
+	}
+    }
+    if (argv != argbuf)
+	free(argv);
+    if (!reply) {
+	SEXP es = Rf_mkChar(c->rc->errstr);
+	rc_close(c);
+	Rf_error("%s error: %s", argv[0], CHAR(es));
+    }
+    /* Rprintf("reply, type=%d\n", reply->type); */
+    res = rc_reply2R(reply);
+    freeReplyObject(reply);
+    return res;
+}
+
+/* this is a work-around our compatibility layer for rredis -
+   it tries to detect values that are serialized and unserializes them.
+   It also converts RAWs to strings, assuming UTF8 */
+SEXP raw_unpack(SEXP sWhat) {
+    SEXP r;
+    if (TYPEOF(sWhat) == RAWSXP && LENGTH(sWhat) >= 10) {
+	unsigned char *a = (unsigned char*) RAW(sWhat);
+	/* we check for "X\n\0\0" since the foramt is "X\n" <bigendian int version = 2> */
+	if (a[0] == 'X' && a[1] == '\n' && !a[2] && !a[3])
+	    return Rf_eval(Rf_lang2(Rf_install("unserialize"), sWhat), R_BaseEnv);
+    }
+    if (TYPEOF(sWhat) == RAWSXP) { /* we do encode strings as RAW so let's reverse that */
+	r = PROTECT(Rf_allocVector(STRSXP, 1));
+	SET_STRING_ELT(r, 0, Rf_mkCharLenCE((const char*)RAW(sWhat), LENGTH(sWhat), CE_UTF8));
+	UNPROTECT(1);
+	return r;
+    }
+    /* everything else is pass-through */
+    return sWhat;
+}

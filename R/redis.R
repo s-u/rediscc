@@ -2,8 +2,19 @@ redis.connect <- function(host="localhost", port=6379L, timeout=30, reconnect=FA
 
 redis.get <- function(rc, keys, list=FALSE) {
   r <- .Call(cr_get, rc, keys, list)
-  if (is.list(r)) lapply(r, function(o) if (is.raw(o)) unserialize(o) else o) else if (is.raw(r)) unserialize(r) else r
+  if (is.list(r)) lapply(r, function(o) .Call(raw_unpack, o)) else .Call(raw_unpack, r)
 }
+
+redis.inc <- function(rc, key) as.integer(.Call(cr_cmd, rc, c("INCR", as.character(key))))
+
+redis.dec <- function(rc, key, N0=FALSE)
+  if (N0) { ## FIXME: this is NOT atomic!
+    i <- redis.dec(rc, key, FALSE)
+    if (i < 0L) redis.zero(rc, key)
+    0L
+  } else as.integer(.Call(cr_cmd, rc, c("DECR", as.character(key))))
+
+redis.zero <- function(rc, key) .Call(cr_cmd, rc, c("SET", as.character(key)[1L], "0"))
 
 redis.rm <- function(rc, keys) invisible(.Call(cr_del, rc, keys))
 
