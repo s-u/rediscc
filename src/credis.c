@@ -262,13 +262,17 @@ SEXP cr_set(SEXP sc, SEXP keys, SEXP values) {
 	if (c->rc)
 	    reply = redisCommandArgv(c->rc, 2 * n + 1, argv, argsz);
 	else {
-	    if (argv != argbuf)
+	    if (argv != argbuf) {
 		free(argv);
+		free(argsz);
+	    }
 	    Rf_error("MGET error: %s and re-connect failed", CHAR(es));
 	}
     }
-    if (argv != argbuf)
+    if (argv != argbuf) {
 	free(argv);
+	free(argsz);
+    }
     if (!reply) {
 	SEXP es = Rf_mkChar(c->rc->errstr);
 	rc_close(c);
