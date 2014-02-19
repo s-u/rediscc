@@ -148,6 +148,7 @@ static void rc_validate_connection(rconn_t *c, int optional) {
 
 #define NARGBUF 128
 static const char *argbuf[NARGBUF];
+static size_t argszbuf[NARGBUF];
 
 SEXP cr_get(SEXP sc, SEXP keys, SEXP asList) {
     rconn_t *c;
@@ -221,7 +222,7 @@ SEXP cr_set(SEXP sc, SEXP keys, SEXP values) {
     rconn_t *c;
     int n, i;
     const char **argv = argbuf;
-    size_t argsz[8];
+    size_t *argsz = argszbuf;
     redisReply *reply;
 
     if (!Rf_inherits(sc, "redisConnection")) Rf_error("invalid connection");
@@ -240,6 +241,11 @@ SEXP cr_set(SEXP sc, SEXP keys, SEXP values) {
 	argv = malloc(sizeof(const char*) * (2 * n + 2));
 	if (!argv)
 	    Rf_error("out of memory");
+	argsz = malloc(sizeof(size_t) * (2 * n + 2));
+	if (!argsz) {
+	    free(argv);
+	    Rf_error("out of memory");
+	}
     }
     argv[0] = "MSET"; argsz[0] = strlen(argv[0]);
     for (i = 0; i < n; i++) {
