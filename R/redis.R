@@ -24,3 +24,11 @@ redis.set <- function(rc, keys, values) invisible(.Call(cr_set, rc, keys, lapply
 redis.close <- function(rc) invisible(.Call(cr_close, rc))
 
 redis.keys <- function(rc, pattern=NULL) .Call(cr_keys, rc, pattern)
+
+# RPUSH can push any number of values at a time
+redis.rpush <- function(rc, key, ...) .Call(cr_cmd, rc, c("RPUSH", as.character(key), ...)) 
+
+redis.rpop <- function(rc, key) {
+  r <- .Call(cr_cmd, rc, c("RPOP", as.character(key)))
+  .Call(raw_unpack, r)
+}
