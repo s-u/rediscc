@@ -10,8 +10,10 @@ redis.inc <- function(rc, key) as.integer(.Call(cr_cmd, rc, c("INCR", as.charact
 redis.dec <- function(rc, key, N0=FALSE)
   if (N0) { ## FIXME: this is NOT atomic!
     i <- redis.dec(rc, key, FALSE)
-    if (i < 0L) redis.zero(rc, key)
-    0L
+    if (i < 0L) {
+      redis.zero(rc, key)
+      0L
+    } else i
   } else as.integer(.Call(cr_cmd, rc, c("DECR", as.character(key))))
 
 redis.zero <- function(rc, key) .Call(cr_cmd, rc, c("SET", as.character(key)[1L], "0"))
@@ -19,7 +21,7 @@ redis.zero <- function(rc, key) .Call(cr_cmd, rc, c("SET", as.character(key)[1L]
 redis.rm <- function(rc, keys) invisible(.Call(cr_del, rc, keys))
 
 ## FIXME: values must be a list of raw vectors -- the only reason is that this is a quick hack to replace rredis in RCS and that's all we need for now (since rredis was serializing everything)
-redis.set <- function(rc, keys, values) invisible(.Call(cr_set, rc, keys, lapply(values, serialize, NULL)))
+redis.set <- function(rc, keys, values) invisible(.Call(cr_set, rc, keys, if (is.raw(values)) list(values) else lapply(values, serialize, NULL)))
 
 redis.close <- function(rc) invisible(.Call(cr_close, rc))
 
