@@ -1,6 +1,6 @@
 Package: rediscc
 Title: Redis client
-Version: 0.1-0
+Version: 0.1-1
 Author: Simon Urbanek <simon.urbanek@r-project.org>
 Maintainer: Simon Urbanek <simon.urbanek@r-project.org>
 Description: Redis client
