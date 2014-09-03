@@ -12,6 +12,7 @@ typedef struct rconn_s {
     int    flags;
     char  *host;
     int    port;
+    int    db;
     double timeout;
 } rconn_t;
 
@@ -34,11 +35,41 @@ static void rconn_fin(SEXP what) {
     }
 }
 
-SEXP cr_connect(SEXP sHost, SEXP sPort, SEXP sTimeout, SEXP sReconnect, SEXP sRetry) {
+static void cr_conn_init(rconn_t *c) {
+    char cmd[20];
+    struct timeval tv;
+    redisReply *reply;
+    tv.tv_sec = (int) c->timeout;
+    tv.tv_usec = (c->timeout - (double)tv.tv_sec) * 1000000.0;
+    redisSetTimeout(c->rc, tv);
+
+    if (c->db) {
+#ifdef WIN32
+	sprintf(cmd, "SELECT %d", c->db);
+#else
+	snprintf(cmd, sizeof(cmd), "SELECT %d", c->db);
+#endif
+	reply = redisCommand(c->rc, cmd);
+	if (!reply) {
+	    SEXP es = Rf_mkChar(c->rc->errstr);
+	    freeReplyObject(reply);
+	    rc_close(c);
+	    Rf_error("SELECT failed: %s", CHAR(es));
+	} else if (reply->type == REDIS_REPLY_ERROR) {
+	    SEXP es = Rf_mkChar(reply->str);
+	    freeReplyObject(reply);
+	    rc_close(c);
+	    Rf_error("SELECT error response: %s", CHAR(es));
+	}
+	freeReplyObject(reply);
+    }
+}
+
+SEXP cr_connect(SEXP sHost, SEXP sPort, SEXP sTimeout, SEXP sReconnect, SEXP sRetry, SEXP sDB) {
     const char *host = "localhost";
     double tout = Rf_asReal(sTimeout);
     int port = Rf_asInteger(sPort), reconnect = (Rf_asInteger(sReconnect) > 0),
-	retry = (Rf_asInteger(sRetry) > 0);
+	retry = (Rf_asInteger(sRetry) > 0), db = Rf_asInteger(sDB);
     redisContext *ctx;
     rconn_t *c;
     SEXP res;
@@ -46,6 +77,9 @@ SEXP cr_connect(SEXP sHost, SEXP sPort, SEXP sTimeout, SEXP sReconnect, SEXP sRe
 
     if (TYPEOF(sHost) == STRSXP && LENGTH(sHost) > 0)
 	host = CHAR(STRING_ELT(sHost, 0));
+
+    if (db < 0 || db > 65535)
+	Rf_error("invalid DB number");
 
     tv.tv_sec = (int) tout;
     tv.tv_usec = (tout - (double)tv.tv_sec) * 1000000.0;
@@ -69,10 +103,11 @@ SEXP cr_connect(SEXP sHost, SEXP sPort, SEXP sTimeout, SEXP sReconnect, SEXP sRe
     c->host  = strdup(host);
     c->port  = port;
     c->timeout = tout;
-    redisSetTimeout(ctx, tv);
+    c->db    = db;
     res = PROTECT(R_MakeExternalPtr(c, R_NilValue, R_NilValue));
     Rf_setAttrib(res, R_ClassSymbol, Rf_mkString("redisConnection"));
     R_RegisterCFinalizer(res, rconn_fin);
+    cr_conn_init(c);
     UNPROTECT(1);
     return res;
 }
@@ -124,6 +159,7 @@ static void rc_validate_connection(rconn_t *c, int optional) {
 	struct timeval tv;
 	tv.tv_sec = (int) c->timeout;
 	tv.tv_usec = (c->timeout - (double)tv.tv_sec) * 1000000.0;
+
 	if (c->port < 1)
 	    c->rc = redisConnectUnixWithTimeout(c->host, tv);
 	else
@@ -139,7 +175,7 @@ static void rc_validate_connection(rconn_t *c, int optional) {
 	    if (optional) return;
 	    Rf_error("disconnected connection and re-connect to redis failed: %s", CHAR(es));
 	}
-	redisSetTimeout(c->rc, tv);
+	cr_conn_init(c);
 	/* re-connect succeeded */
     }
     if (!c->rc && !optional)
