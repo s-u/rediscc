@@ -56,7 +56,7 @@ redis.close(rc)
 ## try connecting - 
 c <- tryCatch(redis.connect(),
               error = function(e) {
-                cat("Cannot connect", e," - please start Redis\n")
+                cat("Cannot connect",e$message, " - please start Redis\n")
                 NULL
               })
 if (!is.null(c)) { ## go ahead only if Redis is up and we got a connection
