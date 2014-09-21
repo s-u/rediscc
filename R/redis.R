@@ -26,3 +26,12 @@ redis.set <- function(rc, keys, values) invisible(.Call(cr_set, rc, keys, if (is
 redis.close <- function(rc) invisible(.Call(cr_close, rc))
 
 redis.keys <- function(rc, pattern=NULL) .Call(cr_keys, rc, pattern)
+
+redis.list <- function (rc, key, value) {
+  .Call(cr_cmd, rc, c("LPUSH", as.character(key), as.character(value)))
+}
+
+redis.list.range <- function (rc, key ,start, end) {
+  r <- .Call(cr_cmd, rc, c("LRANGE", as.character(key), as.integer(start), as.integer(end)))
+  if (is.list(r)) lapply(r, function(o) .Call(raw_unpack, o)) else .Call(raw_unpack, r)
+}
