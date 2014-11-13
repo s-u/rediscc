@@ -26,3 +26,6 @@ redis.set <- function(rc, keys, values) invisible(.Call(cr_set, rc, keys, if (is
 redis.close <- function(rc) invisible(.Call(cr_close, rc))
 
 redis.keys <- function(rc, pattern=NULL) .Call(cr_keys, rc, pattern)
+
+redis.auth <- function(rc, password)
+  invisible(if (!identical(res <- .Call(cr_cmd, rc, c("AUTH", as.character(password)[1L])), "OK")) stop("redis authentication failed with ", res) else TRUE)
