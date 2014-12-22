@@ -11,6 +11,7 @@ typedef struct rconn_s {
     redisContext *rc;
     int    flags;
     char  *host;
+    char  *pwd;
     int    port;
     int    db;
     double timeout;
@@ -31,6 +32,10 @@ static void rconn_fin(SEXP what) {
 	    free(c->host);
 	    c->host = 0;
 	}
+	if (c->pwd) {
+	    free(c->pwd);
+	    c->pwd = 0;
+	}
 	free(c);
     }
 }
@@ -43,6 +48,28 @@ static void cr_conn_init(rconn_t *c) {
     tv.tv_usec = (c->timeout - (double)tv.tv_sec) * 1000000.0;
     redisSetTimeout(c->rc, tv);
 
+    if (c->pwd) { /* AUTH first */
+	int pwd_len = strlen(c->pwd);
+	char *auth = (char*) malloc(pwd_len + 8);
+	if (!auth)
+	    Rf_error("unable to allocate buffer for AUTH");
+	strcpy(auth, "AUTH ");
+	strcpy(auth + 5, c->pwd);
+	reply = redisCommand(c->rc, auth);
+	free(auth);
+	if (!reply) {
+	    SEXP es = Rf_mkChar(c->rc->errstr);
+	    freeReplyObject(reply);
+	    rc_close(c);
+	    Rf_error("AUTH failed: %s", CHAR(es));
+	} else if (reply->type == REDIS_REPLY_ERROR) {
+	    SEXP es = Rf_mkChar(reply->str);
+	    freeReplyObject(reply);
+	    rc_close(c);
+	    Rf_error("AUTH error response: %s", CHAR(es));
+	}
+	freeReplyObject(reply);
+    }
     if (c->db) {
 #ifdef WIN32
 	sprintf(cmd, "SELECT %d", c->db);
@@ -65,8 +92,8 @@ static void cr_conn_init(rconn_t *c) {
     }
 }
 
-SEXP cr_connect(SEXP sHost, SEXP sPort, SEXP sTimeout, SEXP sReconnect, SEXP sRetry, SEXP sDB) {
-    const char *host = "localhost";
+SEXP cr_connect(SEXP sHost, SEXP sPort, SEXP sTimeout, SEXP sReconnect, SEXP sRetry, SEXP sDB, SEXP sPwd) {
+    const char *host = "localhost", *pwd = 0;
     double tout = Rf_asReal(sTimeout);
     int port = Rf_asInteger(sPort), reconnect = (Rf_asInteger(sReconnect) > 0),
 	retry = (Rf_asInteger(sRetry) > 0), db = Rf_asInteger(sDB);
@@ -77,6 +104,8 @@ SEXP cr_connect(SEXP sHost, SEXP sPort, SEXP sTimeout, SEXP sReconnect, SEXP sRe
 
     if (TYPEOF(sHost) == STRSXP && LENGTH(sHost) > 0)
 	host = CHAR(STRING_ELT(sHost, 0));
+    if (TYPEOF(sPwd) == STRSXP && LENGTH(sPwd) > 0)
+	pwd = CHAR(STRING_ELT(sPwd, 0));
 
     if (db < 0 || db > 65535)
 	Rf_error("invalid DB number");
@@ -104,6 +133,7 @@ SEXP cr_connect(SEXP sHost, SEXP sPort, SEXP sTimeout, SEXP sReconnect, SEXP sRe
     c->port  = port;
     c->timeout = tout;
     c->db    = db;
+    c->pwd   = pwd ? strdup(pwd) : 0;
     res = PROTECT(R_MakeExternalPtr(c, R_NilValue, R_NilValue));
     Rf_setAttrib(res, R_ClassSymbol, Rf_mkString("redisConnection"));
     R_RegisterCFinalizer(res, rconn_fin);

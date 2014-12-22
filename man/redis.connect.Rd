@@ -12,7 +12,8 @@
 }
 \usage{
 redis.connect(host = "localhost", port = 6379L, timeout = 30,
-              reconnect = FALSE, retry = FALSE, db = getOption("redis.default.db", 0L))
+              reconnect = FALSE, retry = FALSE, db = getOption("redis.default.db", 0L),
+	      password = NULL)
 redis.close(rc)
 }
 \arguments{
@@ -33,6 +34,9 @@ redis.close(rc)
     \code{0} is the default and any other index will result in a
     \code{SELECT} command to be sent upon connection to select the
     desired database.}
+  \item{password}{string, password to use for authentication with the
+  server or \code{NULL} if no authentication is used. The password is
+  also used for implicit re-connects if enabled.}
   \item{rc}{Redis connection handle (as returned by \code{redis.connect})}
 }
 %\details{
