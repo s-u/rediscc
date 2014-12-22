@@ -142,6 +142,53 @@ SEXP cr_connect(SEXP sHost, SEXP sPort, SEXP sTimeout, SEXP sReconnect, SEXP sRe
     return res;
 }
 
+SEXP cr_clone(SEXP sc, SEXP sDb) {
+    SEXP res;
+    rconn_t *c, *nc;
+    redisContext *ctx;
+    int db = Rf_asInteger(sDb);
+    struct timeval tv;
+
+    if (!Rf_inherits(sc, "redisConnection"))
+	Rf_error("invalid connection");
+    if (db > 65535)
+	Rf_error("invalid DB number");
+
+    c = (rconn_t*) EXTPTR_PTR(sc);
+    nc= (rconn_t*) malloc(sizeof(rconn_t));
+    if (!nc)
+	Rf_error("cannot allocate connection context");
+
+    tv.tv_sec = (int) c->timeout;
+    tv.tv_usec = (c->timeout - (double)tv.tv_sec) * 1000000.0;
+    if (c->port < 1)
+	ctx = redisConnectUnixWithTimeout(c->host, tv);
+    else
+	ctx = redisConnectWithTimeout(c->host, c->port, tv);
+    if (!ctx) {
+	free(nc);
+	Rf_error("connect to redis failed (NULL context)");
+    }
+    if (ctx->err){
+	SEXP es = Rf_mkChar(ctx->errstr);
+	redisFree(ctx);
+	Rf_error("connect to redis failed: %s", CHAR(es));
+    }
+    nc->rc      = ctx;
+    nc->flags   = c->flags;
+    nc->host    = strdup(c->host);
+    nc->port    = c->port;
+    nc->timeout = c->timeout;
+    nc->db      = (db < 0) ? c->db : db;
+    nc->pwd     = c->pwd ? strdup(c->pwd) : 0;
+    res = PROTECT(R_MakeExternalPtr(nc, R_NilValue, R_NilValue));
+    Rf_setAttrib(res, R_ClassSymbol, Rf_mkString("redisConnection"));
+    R_RegisterCFinalizer(res, rconn_fin);
+    cr_conn_init(nc);
+    UNPROTECT(1);
+    return res;
+}
+
 SEXP cr_close(SEXP sc) {
     rconn_t *c;
     if (!Rf_inherits(sc, "redisConnection")) Rf_error("invalid connection");

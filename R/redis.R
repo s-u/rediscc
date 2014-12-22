@@ -1,5 +1,7 @@
 redis.connect <- function(host="localhost", port=6379L, timeout=30, reconnect=FALSE, retry=FALSE, db=getOption("redis.default.db", 0L), password=NULL) .Call(cr_connect, host, port, timeout, reconnect, retry, db, password)
 
+redis.clone <- function(rc, db=NA) .Call(cr_clone, rc, db)
+
 redis.get <- function(rc, keys, list=FALSE) {
   r <- .Call(cr_get, rc, keys, list)
   if (is.list(r)) lapply(r, function(o) .Call(raw_unpack, o)) else .Call(raw_unpack, r)

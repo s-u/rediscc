@@ -1,5 +1,6 @@
 \name{redis.connect}
 \alias{redis.connect}
+\alias{redis.clone}
 \alias{redis.close}
 \title{
   Manage connections to a Redis database
@@ -8,12 +9,18 @@
   \code{redis.connect} creates a new connection to a Redis database and
   returns the handle.
 
+  \code{redis.clone} clones an existing connection by creating a new
+  connection to the same Redis server using exactly the same settings
+  as the supplied connection. Optionally, the database can be changed
+  if \code{db} is set.
+
   \code{redis.close} closes a Redis database connection.
 }
 \usage{
 redis.connect(host = "localhost", port = 6379L, timeout = 30,
               reconnect = FALSE, retry = FALSE, db = getOption("redis.default.db", 0L),
 	      password = NULL)
+redis.clone(rc, db = NA)
 redis.close(rc)
 }
 \arguments{
@@ -33,7 +40,8 @@ redis.close(rc)
   \item{db}{integer, index of the database (keyspace) to use. The index
     \code{0} is the default and any other index will result in a
     \code{SELECT} command to be sent upon connection to select the
-    desired database.}
+    desired database. For \code{redis.clone} this can also be
+    \code{NA} in which case the same database is used as in \code{rc}.}
   \item{password}{string, password to use for authentication with the
   server or \code{NULL} if no authentication is used. The password is
   also used for implicit re-connects if enabled.}
@@ -42,8 +50,9 @@ redis.close(rc)
 %\details{
 %}
 \value{
-  \code{redis.connect}: an opaque handle to use for subsequent
-  operations on the connection (object of the class \code{redisConnection})
+  \code{redis.connect} and \code{redis.clone}: an opaque handle to use
+  for subsequent operations on the connection (object of the class
+  \code{redisConnection})
   
   \code{redis.close}: \code{NULL} (invisibly)
 }
