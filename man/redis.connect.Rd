@@ -26,8 +26,8 @@ redis.close(rc)
 \arguments{
   \item{host}{name of the host to connect to or a path to the socket (if
     \code{port} is 0)}
-  \item{port}{numeric, TCP port to connectt to or 0 is a local (unix)
-    socket is to be used instead (not supported on Windows, obvously).}
+  \item{port}{numeric, TCP port to connect to or 0 if a local (unix)
+    socket is to be used instead (not supported on Windows, obviously).}
   \item{timeout}{numeric, timeout in seconds for requests (reals are
     supported for sub-second accuracy)}
   \item{reconnect}{logical, if \code{TRUE} then commands used on this
