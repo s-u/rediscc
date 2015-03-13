@@ -20,6 +20,10 @@ redis.dec <- function(rc, key, N0=FALSE)
 
 redis.zero <- function(rc, key) .Call(cr_cmd, rc, c("SET", as.character(key)[1L], "0"))
 
+redis.expire <- function(rc, key, seconds) tryCatch(
+  .Call(cr_cmd, rc, c("EXPIRE", as.character(key)[1L], as.character(seconds))),
+  error = function(e) { return(0)}) 
+
 redis.rm <- function(rc, keys) invisible(.Call(cr_del, rc, keys))
 
 ## FIXME: values must be a list of raw vectors -- the only reason is that this is a quick hack to replace rredis in RCS and that's all we need for now (since rredis was serializing everything)
