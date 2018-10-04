@@ -312,7 +312,7 @@ SEXP cr_get(SEXP sc, SEXP keys, SEXP asList) {
     /* Rprintf("reply, type=%d\n", reply->type); */
     if (reply->type != REDIS_REPLY_ARRAY) {
 	freeReplyObject(reply);
-	Rf_error("unexpected result type");
+	Rf_error("unexpected result type %d (expected %d)", (int) (reply->type), (int) REDIS_REPLY_ARRAY);
     }
     if (reply->elements != n) {
 	freeReplyObject(reply);
