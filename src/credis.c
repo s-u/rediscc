@@ -263,9 +263,9 @@ static void rc_validate_connection(rconn_t *c, int optional) {
 static const char *argbuf[NARGBUF];
 static size_t argszbuf[NARGBUF];
 
-SEXP cr_get(SEXP sc, SEXP keys, SEXP asList) {
+SEXP cr_get(SEXP sc, SEXP keys, SEXP asList, SEXP asChr) {
     rconn_t *c;
-    int n, i, use_list = Rf_asInteger(asList);
+    int n, i, use_list = Rf_asInteger(asList), use_str = Rf_asInteger(asChr);
     const char **argv = argbuf;
     redisReply *reply;
     SEXP res;
@@ -279,7 +279,7 @@ SEXP cr_get(SEXP sc, SEXP keys, SEXP asList) {
     n = LENGTH(keys);
     if (use_list < 0) /* asList == NA -> list for non scalar results only */
 	use_list = (n == 1) ? 0 : 1;
-    if (n != 1 && !use_list) Rf_error("exaclty one key must be specified with list=FALSE");
+    if (n != 1 && !use_list && !use_str) Rf_error("exaclty one key must be specified with list=FALSE");
     if (n + 1 > NARGBUF) {
 	argv = malloc(sizeof(const char*) * (n + 2));
 	if (!argv)
@@ -318,7 +318,18 @@ SEXP cr_get(SEXP sc, SEXP keys, SEXP asList) {
 	freeReplyObject(reply);
 	Rf_error("unexpected result length - should be %d but is %d", n, (int) reply->elements);
     }
-    if (use_list) {
+    if (use_str) {
+	int n = reply->elements;
+	res = PROTECT(Rf_allocVector(STRSXP, n));
+	Rf_setAttrib(res, R_NamesSymbol, keys);
+	for (i = 0; i < n; i++)
+	    if (reply->element[i]->type != REDIS_REPLY_STRING) {
+		Rf_warning("non-string result in string mode (element %d)", i + 1);
+		SET_STRING_ELT(res, i, NA_STRING);
+	    } else
+		SET_STRING_ELT(res, i, Rf_mkCharLen(reply->element[i]->str, reply->element[i]->len));
+	UNPROTECT(1);
+    } else if (use_list) {
 	int n = reply->elements;
 	res = PROTECT(Rf_allocVector(VECSXP, n));
 	Rf_setAttrib(res, R_NamesSymbol, keys);
@@ -333,7 +344,7 @@ SEXP cr_get(SEXP sc, SEXP keys, SEXP asList) {
 
 SEXP cr_set(SEXP sc, SEXP keys, SEXP values) {
     rconn_t *c;
-    int n, i;
+    int n, i, is_str;
     const char **argv = argbuf;
     size_t *argsz = argszbuf;
     redisReply *reply;
@@ -347,8 +358,10 @@ SEXP cr_set(SEXP sc, SEXP keys, SEXP values) {
     n = LENGTH(keys);
     if (n < 1) return R_NilValue;
     /* FIXME: we check only the first ... in the hope that we support more formats later */
-    if (TYPEOF(values) != VECSXP || TYPEOF(VECTOR_ELT(values, 0)) != RAWSXP)
-	Rf_error ("Sorry, values can only be a list of raw vectors for now");
+    is_str = TYPEOF(values) == STRSXP;
+    if ((!is_str) &&
+	(TYPEOF(values) != VECSXP || TYPEOF(VECTOR_ELT(values, 0)) != RAWSXP))
+	Rf_error ("Sorry, values can only be a list of raw vectors or a character vector for now");
     if (LENGTH(values) != n) Rf_error("keys/values length mismatch");
     if (2 * n + 1 > NARGBUF) {
 	argv = malloc(sizeof(const char*) * (2 * n + 2));
@@ -364,8 +377,13 @@ SEXP cr_set(SEXP sc, SEXP keys, SEXP values) {
     for (i = 0; i < n; i++) {
 	argv [2 * i + 1] = CHAR(STRING_ELT(keys, i));
 	argsz[2 * i + 1] = strlen(argv[2 * i + 1]);
-	argv [2 * i + 2] = (char*) RAW(VECTOR_ELT(values, i));
-	argsz[2 * i + 2] = LENGTH(VECTOR_ELT(values, i));
+	if (is_str) {
+	    argv [2 * i + 2] = CHAR(STRING_ELT(values, i));
+	    argsz[2 * i + 2] = strlen(argv[2 * i + 2]);
+	} else {
+	    argv [2 * i + 2] = (char*) RAW(VECTOR_ELT(values, i));
+	    argsz[2 * i + 2] = LENGTH(VECTOR_ELT(values, i));
+	}
     }
     reply = redisCommandArgv(c->rc, 2 * n + 1, argv, argsz);
     if (!reply && (c->flags & RCF_RETRY)) {

@@ -16,8 +16,8 @@
   \code{redis.keys} lists all keys matching a pattern
 }
 \usage{
-redis.get(rc, keys, list = FALSE)
-redis.set(rc, keys, values)
+redis.get(rc, keys, list = FALSE, character = FALSE)
+redis.set(rc, keys, values, as.is = FALSE)
 redis.rm (rc, keys)
 redis.keys(rc, pattern = NULL)
 }
@@ -27,14 +27,20 @@ redis.keys(rc, pattern = NULL)
   \item{keys}{character vector of keys. For \code{redis.set} this can
   also be a named list in which case the names are used as keys and
   elements as values.}
-  \item{list}{logical, if \code{TRUE} then \code{keys} is expected to
-  be a single key and the return will be the value. If \code{FALSE}
+  \item{list}{logical, if \code{FALSE} then \code{keys} is expected to
+  be a single key and the return will be the value. If \code{TRUE}
   then the result is always a list with one value for each key.}
+  \item{character}{logical, if \code{TRUE} then values are expected to
+  be character vectors (not serialized). If \code{FALSE} the results
+  are raw vectors and unserialized.}
   \item{values}{only used if \code{keys} is a character vector. If
   \code{keys} is a single string then the content of \code{values}
   will be stored under that key. Otherwise it must be a list of the
   same length as \code{keys} and each element will be stored under the
   corresponding key.}
+  \item{as.is}{logical, if \code{TRUE} the character vectors are stored
+   directly without serialization. Otherwise objects are first
+   serialized before storing.}
   \item{pattern}{string with a glob-style pattern as suppored by Redis
     or \code{NULL} to retrieve all keys}
 }
@@ -44,7 +50,10 @@ redis.keys(rc, pattern = NULL)
   be a single string and the value is returned directly. If
   \code{list} is \code{TRUE} then a list is returned with one result
   element for each key element. If a key doesn't exist \code{NULL} is
-  returned for that key.
+  returned for that key. If \code{character} is \code{TRUE} then
+  the result is a (named) character vector with as many entries as
+  there are keys. If any of the results are not strings, a warning
+  is issued and \code{NA} value is returned for any such element.
 
   \code{redis.set} sets one or more key/value pairs. If \code{keys} is
   of length one then \code{values} is interpreted directly as a single

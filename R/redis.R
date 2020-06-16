@@ -2,9 +2,9 @@ redis.connect <- function(host="localhost", port=6379L, timeout=30, reconnect=FA
 
 redis.clone <- function(rc, db=NA) .Call(cr_clone, rc, db)
 
-redis.get <- function(rc, keys, list=FALSE) {
-  r <- .Call(cr_get, rc, keys, list)
-  if (is.list(r)) lapply(r, function(o) .Call(raw_unpack, o)) else .Call(raw_unpack, r)
+redis.get <- function(rc, keys, list=FALSE, character=FALSE) {
+  r <- .Call(cr_get, rc, keys, list, character)
+  if (is.list(r)) lapply(r, function(o) .Call(raw_unpack, o)) else if (!is.character(r)) .Call(raw_unpack, r) else r
 }
 
 redis.inc <- function(rc, key) as.integer(.Call(cr_cmd, rc, c("INCR", as.character(key))))
@@ -23,7 +23,7 @@ redis.zero <- function(rc, key) .Call(cr_cmd, rc, c("SET", as.character(key)[1L]
 redis.rm <- function(rc, keys) invisible(.Call(cr_del, rc, keys))
 
 ## FIXME: values must be a list of raw vectors -- the only reason is that this is a quick hack to replace rredis in RCS and that's all we need for now (since rredis was serializing everything)
-redis.set <- function(rc, keys, values) invisible(.Call(cr_set, rc, keys, if (is.raw(values)) list(values) else lapply(values, serialize, NULL)))
+redis.set <- function(rc, keys, values, as.is=FALSE) invisible(.Call(cr_set, rc, keys, if (as.is) values else if (is.raw(values)) list(values) else lapply(values, serialize, NULL)))
 
 redis.close <- function(rc) invisible(.Call(cr_close, rc))
 
