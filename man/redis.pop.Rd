@@ -24,6 +24,7 @@ redis.push(rc, key, value, r2l=TRUE)
   \item{r2l}{logical, if \code{TRUE} then the operation is
     right-to-left, i.e. right push, left pop. If \code{FALSE} then the
     operation is left-to-roght (left push, right pop).}
+  \item{key}{string, key}
   \item{value}{value to push. Currently, only string values are
     supported adn they are stored as-is. Multiple values are allowed
     which corresponds to multiple operations.}    
