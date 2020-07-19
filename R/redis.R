@@ -42,6 +42,9 @@ redis.pop <- function(rc, keys, timeout=0, r2l=TRUE) {
 redis.push <- function(rc, key, value, r2l=TRUE)
   .Call(cr_cmd, rc, c(if (r2l) "RPUSH" else "LPUSH", as.character(key), as.character(value)))
 
+redis.expire <- function(rc, key, seconds)
+  .Call(cr_cmd, rc, c("EXPIRE", as.character(key)[1L], as.character(as.integer(seconds))))
+
 redis.rm <- function(rc, keys) invisible(.Call(cr_del, rc, keys))
 
 ## FIXME: values must be a list of raw vectors -- the only reason is that this is a quick hack to replace rredis in RCS and that's all we need for now (since rredis was serializing everything)
