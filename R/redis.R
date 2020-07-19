@@ -20,6 +20,28 @@ redis.dec <- function(rc, key, N0=FALSE)
 
 redis.zero <- function(rc, key) .Call(cr_cmd, rc, c("SET", as.character(key)[1L], "0"))
 
+redis.pop <- function(rc, keys, timeout=0, r2l=TRUE) {
+  r <- if (timeout <= 0) {
+    if (length(keys) == 1) .Call(cr_cmd, rc, c(if (r2l) "LPOP" else "RPOP", as.character(keys))) else stop("Redis supports non-blocking pops only for single keys")
+  } else {
+    if (!is.finite(timeout)) timeout <- 0
+    .Call(cr_cmd, rc, c(if (r2l) "BLPOP" else "BRPOP", keys, as.integer(timeout)))
+  }
+  if (is.list(r)) {
+    l <- lapply(r, function(o) .Call(raw_unpack, o))
+    ## for blocking pop we get a list of keys and values
+    if (length(l) == 2 && length(l[[1]]) == length(l[[2]])) {
+      r <- l[[2]]
+      names(r) <- l[[1]]
+      r
+    } else l
+  } else if (!is.character(r)) .Call(raw_unpack, r) else r
+}
+
+## FIXME: we only support as.is string values
+redis.push <- function(rc, key, value, r2l=TRUE)
+  .Call(cr_cmd, rc, c(if (r2l) "RPUSH" else "LPUSH", as.character(key), as.character(value)))
+
 redis.rm <- function(rc, keys) invisible(.Call(cr_del, rc, keys))
 
 ## FIXME: values must be a list of raw vectors -- the only reason is that this is a quick hack to replace rredis in RCS and that's all we need for now (since rredis was serializing everything)
